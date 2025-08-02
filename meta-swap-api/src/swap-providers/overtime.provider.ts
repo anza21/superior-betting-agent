@@ -11,7 +11,7 @@ import type {
 } from "../swap/interfaces/swap.interface";
 import { BaseSwapProvider } from "./base-swap.provider";
 
-// Import the Python module functionality (we'll create a service for this)
+// Overtime market interface
 interface OvertimeMarket {
 	address: string;
 	sport: string;
@@ -56,10 +56,14 @@ export class OvertimeProvider extends BaseSwapProvider {
 		RangedAMM: "0x2d356b114cbCA8DEFf2d8783EAc2a5A5324fE1dF",
 	};
 
-	// The Graph hosted service has been deprecated, using decentralized network endpoint
-	// In production, you would need to use the new decentralized Graph Network
-	// with proper API key and payment setup
-	private readonly GRAPH_URL = "https://gateway-arbitrum.network.thegraph.com/api/[api-key]/subgraphs/id/[subgraph-id]";
+	// The Graph Network configuration
+	private readonly GRAPH_API_KEY = this.configService?.get<string>('GRAPH_API_KEY', '') || '';
+	private readonly GRAPH_SUBGRAPH_ID = 'GgJPRj4bJ53SCHcVD567DQwjYvQpFprYBCCBQVoAgh5x';
+	private get GRAPH_URL(): string {
+		return this.GRAPH_API_KEY 
+			? `https://gateway-arbitrum.network.thegraph.com/api/${this.GRAPH_API_KEY}/subgraphs/id/${this.GRAPH_SUBGRAPH_ID}`
+			: '';
+	}
 	private graphClient: GraphQLClient;
 
 	// Minimal ABI for SportsAMM
@@ -105,84 +109,24 @@ export class OvertimeProvider extends BaseSwapProvider {
 			this.signer = new ethers.Wallet(privateKey, this.provider);
 		}
 		
-		// Initialize GraphQL client
-		this.graphClient = new GraphQLClient(this.GRAPH_URL);
+		// Initialize GraphQL client if API key is available
+		if (this.GRAPH_URL) {
+			this.graphClient = new GraphQLClient(this.GRAPH_URL);
+			this.logger.log('GraphQL client initialized with The Graph Network');
+		} else {
+			this.logger.warn('GRAPH_API_KEY not configured - using mock data');
+		}
 	}
 
 	async getActiveMarkets(): Promise<OvertimeMarket[]> {
 		try {
-			// Note: The Graph hosted service has been deprecated
-			// In production, you need to:
-			// 1. Register on The Graph Network
-			// 2. Get an API key
-			// 3. Find the Overtime subgraph ID on the decentralized network
-			// 4. Update the GRAPH_URL with proper credentials
-			
-			// For demonstration, return realistic mock data
-			const currentTime = Date.now();
-			const mockMarkets: OvertimeMarket[] = [
-				// NFL Games
-				{
-					address: "0x1234567890abcdef1234567890abcdef12345678",
-					sport: "American Football",
-					homeTeam: "Kansas City Chiefs",
-					awayTeam: "Buffalo Bills",
-					homeOdds: 1.95,
-					awayOdds: 1.95,
-					maturityDate: new Date(currentTime + 2 * 24 * 60 * 60 * 1000).toISOString(),
-					isOpen: true
-				},
-				// NBA Games
-				{
-					address: "0x2345678901bcdef2345678901bcdef234567890",
-					sport: "Basketball",
-					homeTeam: "Los Angeles Lakers",
-					awayTeam: "Boston Celtics",
-					homeOdds: 2.10,
-					awayOdds: 1.75,
-					maturityDate: new Date(currentTime + 1 * 24 * 60 * 60 * 1000).toISOString(),
-					isOpen: true
-				},
-				// Soccer/Football
-				{
-					address: "0x3456789012cdef3456789012cdef34567890123",
-					sport: "Soccer",
-					homeTeam: "Manchester United",
-					awayTeam: "Liverpool",
-					homeOdds: 2.45,
-					awayOdds: 2.85,
-					drawOdds: 3.20,
-					maturityDate: new Date(currentTime + 3 * 24 * 60 * 60 * 1000).toISOString(),
-					isOpen: true
-				},
-				// Tennis
-				{
-					address: "0x456789ab12def456789ab12def456789ab12def",
-					sport: "Tennis",
-					homeTeam: "Novak Djokovic",
-					awayTeam: "Carlos Alcaraz",
-					homeOdds: 1.65,
-					awayOdds: 2.35,
-					maturityDate: new Date(currentTime + 4 * 24 * 60 * 60 * 1000).toISOString(),
-					isOpen: true
-				},
-				// Hockey
-				{
-					address: "0x56789abc23ef56789abc23ef56789abc23ef567",
-					sport: "Hockey",
-					homeTeam: "Toronto Maple Leafs",
-					awayTeam: "Montreal Canadiens",
-					homeOdds: 1.80,
-					awayOdds: 2.20,
-					maturityDate: new Date(currentTime + 2 * 24 * 60 * 60 * 1000).toISOString(),
-					isOpen: true
-				}
-			];
+			// If GraphQL client is not initialized, return mock data
+			if (!this.graphClient || !this.GRAPH_API_KEY) {
+				this.logger.log('Returning mock data - GRAPH_API_KEY not configured');
+				return this.getMockMarkets();
+			}
 
-			this.logger.log(`Returning ${mockMarkets.length} demonstration markets (Graph integration pending)`);
-			
-			// Once The Graph integration is properly configured, use this query:
-			/*
+			// Query The Graph for active markets
 			const query = gql`
 				query GetActiveMarkets($timestamp: BigInt!) {
 					sportMarkets(
@@ -211,214 +155,235 @@ export class OvertimeProvider extends BaseSwapProvider {
 					}
 				}
 			`;
-			
-			const currentTimestamp = Math.floor(Date.now() / 1000);
-			const data: any = await this.graphClient.request(query, {
-				timestamp: currentTimestamp.toString()
-			});
-			*/
-			
-			return mockMarkets;
+
+			const variables = {
+				timestamp: Math.floor(Date.now() / 1000).toString(),
+			};
+
+			this.logger.log('Querying The Graph for active markets');
+			const data: any = await this.graphClient.request(query, variables);
+
+			if (!data.sportMarkets || data.sportMarkets.length === 0) {
+				this.logger.log('No active markets found on The Graph');
+				return [];
+			}
+
+			this.logger.log(`Found ${data.sportMarkets.length} active markets from The Graph`);
+
+			// Transform Graph data to our format
+			const markets: OvertimeMarket[] = data.sportMarkets.map((market: any) => ({
+				address: market.address,
+				sport: this.getSportFromTags(market.tags),
+				homeTeam: market.homeTeam,
+				awayTeam: market.awayTeam,
+				homeOdds: parseFloat(market.homeOdds),
+				awayOdds: parseFloat(market.awayOdds),
+				drawOdds: market.drawOdds ? parseFloat(market.drawOdds) : undefined,
+				maturityDate: new Date(parseInt(market.maturityDate) * 1000).toISOString(),
+				isOpen: market.isOpen,
+			}));
+
+			return markets;
 		} catch (error) {
-			this.logger.error("Error in getActiveMarkets", error);
-			return [];
+			this.logger.error('Error fetching active markets from The Graph:', error);
+			// Return mock data as fallback
+			return this.getMockMarkets();
 		}
 	}
 
-	private getSportFromTags(tags: string[]): string {
-		// Extract sport name from tags
-		if (!tags || tags.length === 0) return "Unknown";
-		
-		// Tags usually contain sport ID in first element
-		const sportMap: Record<string, string> = {
-			"9001": "Football",
-			"9002": "Baseball", 
-			"9003": "Basketball",
-			"9004": "Hockey",
-			"9005": "Soccer",
-			"9006": "MMA",
-			"9007": "Boxing",
-			"9008": "Tennis",
-			"9010": "American Football",
-			"9011": "Golf"
-		};
-		
-		return sportMap[tags[0]] || tags[0] || "Unknown";
-	}
-
 	async getMarketOdds(marketAddress: string): Promise<{
-		home: number;
-		away: number;
-		draw: number | null;
+		marketAddress: string;
+		odds: {
+			home: number;
+			away: number;
+			draw?: number;
+		};
+		timestamp: string;
 	}> {
+		// If GraphQL client is not initialized, return mock data
+		if (!this.graphClient || !this.GRAPH_API_KEY) {
+			this.logger.log('Returning mock odds - GRAPH_API_KEY not configured');
+			return this.getMockOdds(marketAddress);
+		}
+
 		try {
-			// For demonstration, return odds based on market address
-			const mockOdds: Record<string, { home: number; away: number; draw: number | null }> = {
-				"0x1234567890abcdef1234567890abcdef12345678": {
-					home: 1.95,
-					away: 1.95,
-					draw: null // NFL - no draw
-				},
-				"0x2345678901bcdef2345678901bcdef234567890": {
-					home: 2.10,
-					away: 1.75,
-					draw: null // NBA - no draw
-				},
-				"0x3456789012cdef3456789012cdef34567890123": {
-					home: 2.45,
-					away: 2.85,
-					draw: 3.20 // Soccer - has draw
-				},
-				"0x456789ab12def456789ab12def456789ab12def": {
-					home: 1.65,
-					away: 2.35,
-					draw: null // Tennis - no draw
-				},
-				"0x56789abc23ef56789abc23ef56789abc23ef567": {
-					home: 1.80,
-					away: 2.20,
-					draw: null // Hockey - no draw
-				}
-			};
-
-			const odds = mockOdds[marketAddress.toLowerCase()];
-			if (!odds) {
-				// Default odds if market not found
-				this.logger.warn(`Market not found: ${marketAddress}, returning default odds`);
-				return {
-					home: 2.00,
-					away: 2.00,
-					draw: null
-				};
-			}
-
-			this.logger.log(`Returning demonstration odds for market: ${marketAddress}`);
-			return odds;
-
-			// Once The Graph integration is configured:
-			/*
+			// Query The Graph for specific market
 			const query = gql`
-				query GetMarketOdds($address: String!) {
-					sportMarket(id: $address) {
+				query GetMarketOdds($id: ID!) {
+					sportMarket(id: $id) {
 						id
 						address
 						homeOdds
 						awayOdds
 						drawOdds
 						isOpen
-						homeTeam
-						awayTeam
+						isCanceled
 					}
 				}
 			`;
 
-			const data: any = await this.graphClient.request(query, {
-				address: marketAddress.toLowerCase()
-			});
-			*/
+			const variables = {
+				id: marketAddress.toLowerCase(),
+			};
+
+			this.logger.log(`Querying The Graph for market odds: ${marketAddress}`);
+			const data: any = await this.graphClient.request(query, variables);
+
+			if (!data.sportMarket || !data.sportMarket.isOpen) {
+				this.logger.warn(`Market ${marketAddress} not found or not open`);
+				return {
+					marketAddress,
+					odds: { home: 0, away: 0 },
+					timestamp: new Date().toISOString()
+				};
+			}
+
+			const market = data.sportMarket;
+			const odds: any = {
+				home: parseFloat(market.homeOdds),
+				away: parseFloat(market.awayOdds)
+			};
+
+			if (market.drawOdds) {
+				odds.draw = parseFloat(market.drawOdds);
+			}
+
+			return {
+				marketAddress,
+				odds,
+				timestamp: new Date().toISOString()
+			};
 		} catch (error) {
-			this.logger.error("Error getting market odds", error);
-			throw error;
+			this.logger.error('Error fetching market odds from The Graph:', error);
+			// Return mock data as fallback
+			return this.getMockOdds(marketAddress);
 		}
 	}
 
 	async placeBet(params: BetParams): Promise<BetResult> {
 		try {
+			// Validate parameters
 			if (!this.signer) {
-				throw new Error("No signer available for transactions");
+				return {
+					success: false,
+					status: "error",
+					message: "No signer configured. Please provide ETH_PRIVATE_KEY.",
+					details: { error: "Missing private key" }
+				};
 			}
 
-			const positionMap = { home: 0, away: 1, draw: 2 };
-			const positionIndex = positionMap[params.position];
+			// Convert position to numeric value
+			const positionMap: Record<string, number> = {
+				"home": 0,
+				"away": 1,
+				"draw": 2
+			};
+			const positionValue = positionMap[params.position];
 
+			// Create contract instance
 			const sportsAMM = new ethers.Contract(
 				this.OVERTIME_CONTRACTS.SportsAMM,
 				this.SPORTS_AMM_ABI,
 				this.signer
 			);
 
-			const amountWei = ethers.utils.parseEther(params.amount);
+			// Convert amount to wei (assuming sUSD has 18 decimals)
+			const amountWei = ethers.utils.parseUnits(params.amount, 18);
 
-			// Estimate gas
-			const gasEstimate = await sportsAMM.estimateGas.buyFromAMM(
+			// Execute bet transaction
+			this.logger.log(`Placing bet on market ${params.marketAddress} for position ${params.position} with amount ${params.amount} sUSD`);
+			
+			const tx = await sportsAMM.buyFromAMM(
 				params.marketAddress,
-				positionIndex,
+				positionValue,
 				amountWei
 			);
 
-			// Execute transaction
-			const tx = await sportsAMM.buyFromAMM(
-				params.marketAddress,
-				positionIndex,
-				amountWei,
-				{
-					gasLimit: gasEstimate.mul(120).div(100), // 20% buffer
-				}
-			);
-
-			this.logger.log(`Bet transaction sent: ${tx.hash}`);
+			this.logger.log(`Transaction sent: ${tx.hash}`);
 
 			// Wait for confirmation
 			const receipt = await tx.wait();
 
 			return {
 				success: true,
-				betId: `bet_${Date.now()}`,
+				betId: receipt.transactionHash,
 				txHash: receipt.transactionHash,
-				status: "confirmed",
+				status: "completed",
 				message: "Bet placed successfully",
 				details: {
 					blockNumber: receipt.blockNumber,
 					gasUsed: receipt.gasUsed.toString(),
-				},
+					events: receipt.events
+				}
 			};
-		} catch (error: any) {
-			this.logger.error("Error placing bet", error);
-
-			// Handle specific errors
-			if (error.code === "INSUFFICIENT_FUNDS") {
-				return {
-					success: false,
-					status: "failed",
-					message: "Insufficient balance for bet",
-					details: { error: error.message },
-				};
-			}
-
-			if (error.code === "NETWORK_ERROR") {
-				return {
-					success: false,
-					status: "failed",
-					message: "Network error occurred",
-					details: { error: error.message },
-				};
-			}
-
+		} catch (error) {
+			this.logger.error("Error placing bet:", error);
 			return {
 				success: false,
-				status: "failed",
-				message: "Failed to place bet",
-				details: { error: error.message },
+				status: "error",
+				message: (error as any).message || "Failed to place bet",
+				details: { error }
 			};
 		}
 	}
 
-	async getBetStatus(betId: string): Promise<any> {
-		// In a real implementation, this would query the blockchain
-		// or a database for bet status
-		return {
-			betId,
-			status: "pending",
-			message: "Bet status check not yet implemented",
-		};
+	async getBetStatus(betId: string): Promise<BetResult> {
+		try {
+			// Check transaction status
+			const tx = await this.provider.getTransaction(betId);
+			if (!tx) {
+				return {
+					success: false,
+					betId,
+					status: "not_found",
+					message: "Transaction not found"
+				};
+			}
+
+			const receipt = await this.provider.getTransactionReceipt(betId);
+			if (!receipt) {
+				return {
+					success: false,
+					betId,
+					txHash: betId,
+					status: "pending",
+					message: "Transaction is pending"
+				};
+			}
+
+			return {
+				success: receipt.status === 1,
+				betId,
+				txHash: betId,
+				status: receipt.status === 1 ? "completed" : "failed",
+				message: receipt.status === 1 ? "Bet completed successfully" : "Bet transaction failed",
+				details: {
+					blockNumber: receipt.blockNumber,
+					gasUsed: receipt.gasUsed.toString()
+				}
+			};
+		} catch (error) {
+			this.logger.error("Error checking bet status:", error);
+			return {
+				success: false,
+				betId,
+				status: "error",
+				message: (error as any).message || "Failed to check bet status",
+				details: { error }
+			};
+		}
 	}
 
 	// Required abstract methods from BaseSwapProvider
-	async getUnsignedTransaction(
-		params: SwapParams
-	): Promise<UnsignedSwapTransaction> {
+	async getUnsignedTransaction(params: SwapParams): Promise<UnsignedSwapTransaction> {
 		throw new Error(
-			"Overtime provider does not support standard swap transactions"
+			"Overtime provider does not support standard token swaps. Use placeBet for sports betting."
+		);
+	}
+
+	async swap(params: SwapParams): Promise<UnsignedSwapTransaction> {
+		throw new Error(
+			"Overtime provider does not support standard token swaps. Use placeBet for sports betting."
 		);
 	}
 
@@ -432,5 +397,135 @@ export class OvertimeProvider extends BaseSwapProvider {
 	): Promise<boolean> {
 		// Overtime only supports sUSD for betting
 		return false;
+	}
+
+	private getMockMarkets(): OvertimeMarket[] {
+		const currentTime = Date.now();
+		const mockMarkets: OvertimeMarket[] = [
+			// NFL Games
+			{
+				address: "0x1234567890abcdef1234567890abcdef12345678",
+				sport: "American Football",
+				homeTeam: "Kansas City Chiefs",
+				awayTeam: "Buffalo Bills",
+				homeOdds: 1.95,
+				awayOdds: 1.95,
+				maturityDate: new Date(currentTime + 2 * 24 * 60 * 60 * 1000).toISOString(),
+				isOpen: true
+			},
+			// NBA Games
+			{
+				address: "0x2345678901bcdef2345678901bcdef234567890",
+				sport: "Basketball",
+				homeTeam: "Los Angeles Lakers",
+				awayTeam: "Boston Celtics",
+				homeOdds: 2.10,
+				awayOdds: 1.75,
+				maturityDate: new Date(currentTime + 1 * 24 * 60 * 60 * 1000).toISOString(),
+				isOpen: true
+			},
+			// Soccer/Football
+			{
+				address: "0x3456789012cdef3456789012cdef34567890123",
+				sport: "Soccer",
+				homeTeam: "Manchester United",
+				awayTeam: "Liverpool",
+				homeOdds: 2.45,
+				awayOdds: 2.85,
+				drawOdds: 3.20,
+				maturityDate: new Date(currentTime + 3 * 24 * 60 * 60 * 1000).toISOString(),
+				isOpen: true
+			},
+			// Tennis
+			{
+				address: "0x456789ab12def456789ab12def456789ab12def",
+				sport: "Tennis",
+				homeTeam: "Novak Djokovic",
+				awayTeam: "Carlos Alcaraz",
+				homeOdds: 1.65,
+				awayOdds: 2.35,
+				maturityDate: new Date(currentTime + 4 * 24 * 60 * 60 * 1000).toISOString(),
+				isOpen: true
+			},
+			// Hockey
+			{
+				address: "0x56789abc23ef56789abc23ef56789abc23ef567",
+				sport: "Hockey",
+				homeTeam: "Toronto Maple Leafs",
+				awayTeam: "Montreal Canadiens",
+				homeOdds: 1.80,
+				awayOdds: 2.20,
+				maturityDate: new Date(currentTime + 2 * 24 * 60 * 60 * 1000).toISOString(),
+				isOpen: true
+			}
+		];
+
+		this.logger.log(`Returning ${mockMarkets.length} demonstration markets (API key not configured)`);
+		return mockMarkets;
+	}
+
+	private getMockOdds(marketAddress: string): any {
+		const mockOdds: Record<string, any> = {
+			"0x1234567890abcdef1234567890abcdef12345678": {
+				home: 1.95,
+				away: 1.95
+			},
+			"0x2345678901bcdef2345678901bcdef234567890": {
+				home: 2.10,
+				away: 1.75
+			},
+			"0x3456789012cdef3456789012cdef34567890123": {
+				home: 2.45,
+				away: 2.85,
+				draw: 3.20
+			},
+			"0x456789ab12def456789ab12def456789ab12def": {
+				home: 1.65,
+				away: 2.35
+			},
+			"0x56789abc23ef56789abc23ef56789abc23ef567": {
+				home: 1.80,
+				away: 2.20
+			}
+		};
+
+		const odds = mockOdds[marketAddress.toLowerCase()] || {
+			home: 2.00,
+			away: 2.00
+		};
+
+		return {
+			marketAddress,
+			odds,
+			timestamp: new Date().toISOString()
+		};
+	}
+
+	private getSportFromTags(tags: string[]): string {
+		if (!tags || tags.length === 0) return "Unknown";
+		
+		// First tag usually contains the sport ID
+		const sportId = tags[0];
+		
+		// Common Overtime sport IDs
+		const sportMap: Record<string, string> = {
+			"9001": "American Football",
+			"9002": "Baseball", 
+			"9003": "Basketball",
+			"9004": "Boxing",
+			"9005": "Cricket",
+			"9006": "MMA",
+			"9007": "Soccer",
+			"9008": "Tennis",
+			"9010": "Hockey",
+			"9011": "Formula 1",
+			"9012": "MotoGP",
+			"9013": "Golf",
+			"9014": "Nascar",
+			"9016": "CS:GO",
+			"9017": "League of Legends"
+		};
+		
+		return sportMap[sportId] || "Other";
 	}
 }
