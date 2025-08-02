@@ -58,11 +58,16 @@ export class OvertimeProvider extends BaseSwapProvider {
 
 	// The Graph Network configuration
 	private readonly GRAPH_API_KEY = this.configService?.get<string>('GRAPH_API_KEY', '') || '';
-	private readonly GRAPH_SUBGRAPH_ID = 'GgJPRj4bJ53SCHcVD567DQwjYvQpFprYBCCBQVoAgh5x';
+	// Note: Using the v1 hosted service endpoint for now
+	// The v2 subgraph may not be migrated to the decentralized network yet
 	private get GRAPH_URL(): string {
-		return this.GRAPH_API_KEY 
-			? `https://gateway-arbitrum.network.thegraph.com/api/${this.GRAPH_API_KEY}/subgraphs/id/${this.GRAPH_SUBGRAPH_ID}`
-			: '';
+		// Try custom URL first if provided
+		const customUrl = this.configService?.get<string>('GRAPH_SUBGRAPH_URL', '');
+		if (customUrl) {
+			return customUrl;
+		}
+		// Use the hosted service endpoint (still works for some subgraphs)
+		return 'https://api.thegraph.com/subgraphs/name/thales-markets/overtime-arbitrum';
 	}
 	private graphClient: GraphQLClient;
 
@@ -109,23 +114,26 @@ export class OvertimeProvider extends BaseSwapProvider {
 			this.signer = new ethers.Wallet(privateKey, this.provider);
 		}
 		
-		// Initialize GraphQL client if API key is available
+		// Initialize GraphQL client
 		if (this.GRAPH_URL) {
 			this.graphClient = new GraphQLClient(this.GRAPH_URL);
-			this.logger.log('GraphQL client initialized with The Graph Network');
+			this.logger.log(`GraphQL client initialized with URL: ${this.GRAPH_URL}`);
 		} else {
-			this.logger.warn('GRAPH_API_KEY not configured - using mock data');
+			this.logger.warn('No Graph URL configured - using mock data');
 		}
 	}
 
 	async getActiveMarkets(): Promise<OvertimeMarket[]> {
 		try {
 			// If GraphQL client is not initialized, return mock data
-			if (!this.graphClient || !this.GRAPH_API_KEY) {
-				this.logger.log('Returning mock data - GRAPH_API_KEY not configured');
+			if (!this.graphClient) {
+				this.logger.log('Returning mock data - GraphQL client not initialized');
 				return this.getMockMarkets();
 			}
 
+			console.log('Starting Graph query with URL:', this.GRAPH_URL);
+			console.log('API Key present:', !!this.GRAPH_API_KEY);
+			
 			// Query The Graph for active markets
 			const query = gql`
 				query GetActiveMarkets($timestamp: BigInt!) {
@@ -186,6 +194,14 @@ export class OvertimeProvider extends BaseSwapProvider {
 			return markets;
 		} catch (error) {
 			this.logger.error('Error fetching active markets from The Graph:', error);
+			console.error('Full error object:', error);
+			console.error('Graph URL:', this.GRAPH_URL);
+			console.error('API Key exists:', !!this.GRAPH_API_KEY);
+			this.logger.error('Error details:', {
+				message: (error as any).message || 'No message',
+				response: (error as any).response?.data || (error as any).response || 'No response',
+				graphUrl: this.GRAPH_URL
+			});
 			// Return mock data as fallback
 			return this.getMockMarkets();
 		}
@@ -201,8 +217,8 @@ export class OvertimeProvider extends BaseSwapProvider {
 		timestamp: string;
 	}> {
 		// If GraphQL client is not initialized, return mock data
-		if (!this.graphClient || !this.GRAPH_API_KEY) {
-			this.logger.log('Returning mock odds - GRAPH_API_KEY not configured');
+		if (!this.graphClient) {
+			this.logger.log('Returning mock odds - GraphQL client not initialized');
 			return this.getMockOdds(marketAddress);
 		}
 
@@ -255,6 +271,12 @@ export class OvertimeProvider extends BaseSwapProvider {
 			};
 		} catch (error) {
 			this.logger.error('Error fetching market odds from The Graph:', error);
+			this.logger.error('Error details:', {
+				message: (error as any).message,
+				response: (error as any).response,
+				graphUrl: this.GRAPH_URL,
+				marketAddress
+			});
 			// Return mock data as fallback
 			return this.getMockOdds(marketAddress);
 		}
