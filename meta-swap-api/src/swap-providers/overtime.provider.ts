@@ -101,16 +101,50 @@ export class OvertimeProvider extends BaseSwapProvider {
 
 	async getActiveMarkets(): Promise<OvertimeMarket[]> {
 		try {
-			// In production, this would call the Overtime API
-			// For now, we'll return mock data
-			const response = await fetch(
-				"https://overtimemarketsv2.xyz/arbitrum/markets"
-			);
-			if (!response.ok) {
-				throw new Error(`Failed to fetch markets: ${response.statusText}`);
-			}
-			const markets = await response.json();
-			return markets.filter((m: any) => m.isOpen);
+			// For demonstration, return mock data
+			// In production, this would integrate with Overtime's GraphQL or REST API
+			const mockMarkets: OvertimeMarket[] = [
+				{
+					address: "0x1a2b3c4d5e6f7890abcdef1234567890abcdef12",
+					sport: "Football",
+					homeTeam: "Real Madrid",
+					awayTeam: "Barcelona",
+					homeOdds: 2.15,
+					awayOdds: 3.40,
+					drawOdds: 3.20,
+					maturityDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days from now
+					isOpen: true
+				},
+				{
+					address: "0x2b3c4d5e6f7890abcdef1234567890abcdef123",
+					sport: "Basketball",
+					homeTeam: "Lakers",
+					awayTeam: "Celtics",
+					homeOdds: 1.85,
+					awayOdds: 2.10,
+					maturityDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day from now
+					isOpen: true
+				},
+				{
+					address: "0x3c4d5e6f7890abcdef1234567890abcdef1234",
+					sport: "Tennis",
+					homeTeam: "Djokovic",
+					awayTeam: "Nadal",
+					homeOdds: 1.75,
+					awayOdds: 2.25,
+					maturityDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days from now
+					isOpen: true
+				}
+			];
+
+			this.logger.log(`Returning ${mockMarkets.length} mock markets for demonstration`);
+			
+			// In production, you would use:
+			// - The Graph Protocol: https://thegraph.com/hosted-service/subgraph/thales-markets/overtime-arbitrum
+			// - Or direct contract calls to SportsAMM
+			// - Or Overtime's official API (when available)
+			
+			return mockMarkets;
 		} catch (error) {
 			this.logger.error("Error fetching active markets", error);
 			return [];
@@ -123,22 +157,45 @@ export class OvertimeProvider extends BaseSwapProvider {
 		draw: number | null;
 	}> {
 		try {
-			const sportsAMM = new ethers.Contract(
-				this.OVERTIME_CONTRACTS.SportsAMM,
-				this.SPORTS_AMM_ABI,
-				this.provider
-			);
-
-			const [homeOdds, awayOdds, drawOdds] =
-				await sportsAMM.getMarketDefaultOdds(marketAddress);
-
-			return {
-				home: parseFloat(ethers.utils.formatEther(homeOdds)),
-				away: parseFloat(ethers.utils.formatEther(awayOdds)),
-				draw: drawOdds.gt(0)
-					? parseFloat(ethers.utils.formatEther(drawOdds))
-					: null,
+			// For demonstration, return mock odds based on market address
+			const mockOdds: Record<string, { home: number; away: number; draw: number | null }> = {
+				"0x1a2b3c4d5e6f7890abcdef1234567890abcdef12": {
+					home: 2.15,
+					away: 3.40,
+					draw: 3.20
+				},
+				"0x2b3c4d5e6f7890abcdef1234567890abcdef123": {
+					home: 1.85,
+					away: 2.10,
+					draw: null // Basketball has no draw
+				},
+				"0x3c4d5e6f7890abcdef1234567890abcdef1234": {
+					home: 1.75,
+					away: 2.25,
+					draw: null // Tennis has no draw
+				}
 			};
+
+			const odds = mockOdds[marketAddress.toLowerCase()];
+			if (!odds) {
+				// Default odds if market not found
+				return {
+					home: 2.00,
+					away: 2.00,
+					draw: 3.50
+				};
+			}
+
+			this.logger.log(`Returning mock odds for market: ${marketAddress}`);
+			return odds;
+
+			// In production, this would call the smart contract:
+			// const sportsAMM = new ethers.Contract(
+			//   this.OVERTIME_CONTRACTS.SportsAMM,
+			//   this.SPORTS_AMM_ABI,
+			//   this.provider
+			// );
+			// const [homeOdds, awayOdds, drawOdds] = await sportsAMM.getMarketDefaultOdds(marketAddress);
 		} catch (error) {
 			this.logger.error("Error getting market odds", error);
 			throw error;
