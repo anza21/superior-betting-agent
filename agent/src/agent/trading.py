@@ -10,7 +10,8 @@ from src.container import ContainerManager
 from src.genner.Base import Genner
 from src.client.rag import RAGClient
 from src.sensor.trading import TradingSensor
-from src.types import ChatHistory, Message
+from src.custom_types import ChatHistory, Message
+import json
 
 
 class TradingPromptGenerator:
@@ -22,7 +23,7 @@ class TradingPromptGenerator:
 	It handles the substitution of placeholders in prompt templates with actual values.
 	"""
 
-	def __init__(self, prompts: Dict[str, str]):
+	def __init__(self, prompts: Dict[str, str], genner: Genner):
 		"""
 		Initialize with custom prompts for each function.
 
@@ -37,6 +38,7 @@ class TradingPromptGenerator:
 			prompts = self.get_default_prompts()
 		self._validate_prompts(prompts)
 		self.prompts = self.get_default_prompts()
+		self.genner = genner
 
 	def _instruments_to_curl_prompt(
 		self,
@@ -132,12 +134,31 @@ class TradingPromptGenerator:
                     "slippage": "<slippage_tolerance>"
                 }}'
             """),
+				"sports_betting": dedent(f"""
+                # Sports Betting via Overtime Protocol v2
+                curl -X POST "http://{txn_service_url}/api/v1/overtime/bet" \\
+                -H "Content-Type: application/json" \\
+                -H "x-superior-agent-id: {agent_id}" \\
+                -H "x-superior-session-id: {session_id}" \\
+                -d '{{
+                    "market_address": "<sports_market_address>",
+                    "position": "<home|away|draw>",
+                    "amount": "<bet_amount_in_sUSD>",
+                    "odds": "<decimal_odds>",
+                    "deadline": "<timestamp>"
+                }}'
+                
+                # Check bet status
+                curl -X GET "http://{txn_service_url}/api/v1/overtime/bet/{{bet_id}}" \\
+                -H "x-superior-agent-id: {agent_id}" \\
+                -H "x-superior-session-id: {session_id}"
+            """),
 			}
 			instruments_str = [mapping[instrument] for instrument in instruments]
 			return "\n".join(instruments_str)
 		except KeyError as e:
 			raise KeyError(
-				f"Expected trading_instruments to be in ['spot', 'defi', 'futures', 'options'], {e}"
+				f"Expected trading_instruments to be in ['spot', 'defi', 'futures', 'options', 'sports_betting'], {e}"
 			)
 
 	@staticmethod
@@ -298,8 +319,11 @@ class TradingPromptGenerator:
 		        str: Formatted prompt for first-time research code generation
 		"""
 		apis_str = ",\n".join(apis) if apis else self._get_default_apis_str()
+		# Ensure apis_str is not empty
+		if not apis_str:
+			apis_str = "No APIs available"
 
-		return self.prompts["research_code_prompt_first"].format(
+		return self.prompts.get("research_code_prompt_first", "").format(
 			apis_str=apis_str, network=network
 		)
 
@@ -340,8 +364,8 @@ class TradingPromptGenerator:
 		)
 
 	def generate_strategy_prompt(
-		self, notifications_str: str, research_output_str: str, network: str
-	) -> str:
+		self, notifications_str: str, research_output_str: str, network: str, chat_history: ChatHistory, apis: List[str]
+	) -> Tuple[Result[str, str], ChatHistory]:
 		"""
 		Generate a prompt for strategy formulation.
 
@@ -352,15 +376,36 @@ class TradingPromptGenerator:
 		        notifications_str (str): String containing recent notifications
 		        research_output_str (str): Output from the research code
 		        network (str): Blockchain network to operate on
+		        chat_history (ChatHistory): The chat history to use
+		        apis (List[str]): List of APIs available to the agent
 
 		Returns:
 		        str: Formatted prompt for strategy formulation
 		"""
-		return self.prompts["strategy_prompt"].format(
-			notifications_str=notifications_str,
-			research_output_str=research_output_str,
-			network=network,
+		# Use chat_history directly
+		new_ch = chat_history
+
+		ctx_ch = ChatHistory(
+			Message(
+				role="user",
+				content=self.prompts.get("strategy_prompt", "").format(
+					notifications_str=notifications_str,
+					research_output_str=research_output_str,
+					network=network,
+					apis_str=", ".join(apis) if apis else "No APIs available"
+				),
+			)
 		)
+
+		gen_result = self.genner.ch_completion(chat_history + ctx_ch)
+
+		if err := gen_result.err():
+			return Err(f"TradingAgent.gen_strategy, err: \n{err}"), ctx_ch
+
+		response = gen_result.unwrap()
+		ctx_ch = ctx_ch.append(Message(role="assistant", content=response))
+
+		return Ok(response), ctx_ch
 
 	def generate_address_research_code_prompt(
 		self,
@@ -475,7 +520,9 @@ class TradingPromptGenerator:
 		        str: Formatted prompt for code regeneration
 		"""
 		return self.prompts["regen_code_prompt"].format(
-			errors=errors, previous_code=previous_code
+			errors=errors,
+			previous_code=previous_code,
+			latest_response="No response available"
 		)
 
 	@staticmethod
@@ -490,7 +537,7 @@ class TradingPromptGenerator:
 		        str: Comma-separated string of default APIs
 		"""
 		default_apis = [
-			"Coingecko (env variables COINGECKO_API_KEY)",
+			"Coingecko (using public API)",
 			"Twitter (env variables TWITTER_API_KEY, TWITTER_API_KEY_SECRET)",
 			"DuckDuckGo (using the command line `ddgr`)",
 		]
@@ -596,7 +643,7 @@ class TradingPromptGenerator:
 			Please generate some code to get the address of any tokens mentioned above.
 			For native tokens on EVM chains (like ethereum, polygon, arbitrum, optimism, etc...) just use burn address 0x0000000000000000000000000000000000000000 or wrapped token like wrapped WETH https://etherscan.io/token/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
 			Use the CoinGecko API to find the token contract addresses if you do not know them.
-			(curl -X GET "https://pro-api.coingecko.com/api/v3/search?query={{ASSUMED_TOKEN_SYMBOL}}&x_cg_pro_api_key={{COINGECKO_API_KEY}}) # To find token symbols
+			(curl -X GET "https://api.coingecko.com/api/v3/search?query={{ASSUMED_TOKEN_SYMBOL}}") # To find token symbols
 			```json-schema
 			{{
 			"type": "object",
@@ -672,7 +719,7 @@ class TradingPromptGenerator:
 			"required": ["coins", "exchanges", "icos", "categories", "nfts"]
 			}}
 			```
-			(curl -X GET "https://pro-api.coingecko.com/api/v3/coins/{{COINGECKO_COIN_ID}}?x_cg_pro_api_key={{COINGECKO_API_KEY}}") # To find the address of the symbols
+			(curl -X GET "https://api.coingecko.com/api/v3/coins/{{COINGECKO_COIN_ID}}") # To find the address of the symbols
 			```json-schema
 			{{
 				"type": "object",
@@ -811,6 +858,7 @@ class TradingAgent:
 		genner: Genner,
 		container_manager: ContainerManager,
 		prompt_generator: TradingPromptGenerator,
+		apis: List[str] = None
 	):
 		"""
 		Initialize the trading agent with all required components.
@@ -831,6 +879,7 @@ class TradingAgent:
 		self.genner = genner
 		self.container_manager = container_manager
 		self.prompt_generator = prompt_generator
+		self.apis = apis or []
 
 		self.chat_history = ChatHistory()
 
@@ -998,14 +1047,23 @@ class TradingAgent:
 		    Result[Tuple[str, ChatHistory], str]: Success with strategy and chat history,
 		        or error message
 		"""
+		prompt_result, prompt_ctx_ch = self.prompt_generator.generate_strategy_prompt(
+			notifications_str=notifications_str,
+			research_output_str=research_output_str,
+			network=network,
+			chat_history=self.chat_history,
+			apis=self.apis,
+		)
+
+		if err := prompt_result.err():
+			return Err(f"TradingAgent.gen_strategy, err: \n{err}"), prompt_ctx_ch
+
+		prompt = prompt_result.unwrap()
+		
 		ctx_ch = ChatHistory(
 			Message(
 				role="user",
-				content=self.prompt_generator.generate_strategy_prompt(
-					notifications_str=notifications_str,
-					research_output_str=research_output_str,
-					network=network,
-				),
+				content=prompt,
 			)
 		)
 
@@ -1015,9 +1073,12 @@ class TradingAgent:
 			return Err(f"TradingAgent.gen_strategy, err: \n{err}"), ctx_ch
 
 		response = gen_result.unwrap()
+		
+		# Create a message with the response
 		ctx_ch = ctx_ch.append(Message(role="assistant", content=response))
-
-		return Ok(response), ctx_ch
+		
+		# Return the response directly since it's already a Result
+		return gen_result, ctx_ch
 
 	def gen_account_research_code(
 		self, strategy_output: str

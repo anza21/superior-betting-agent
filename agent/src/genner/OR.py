@@ -6,7 +6,7 @@ from result import Err, Ok, Result
 from src.client.openrouter import OpenRouter
 from src.config import OpenRouterConfig
 from src.helper import extract_content
-from src.types import ChatHistory
+from src.custom_types import ChatHistory
 
 from .Base import Genner
 
@@ -50,6 +50,9 @@ class OpenRouterGenner(Genner):
 			Ok(str): The generated text if successful
 			Err(str): Error message if the API call fails
 		"""
+		from loguru import logger
+		import json
+
 		final_response = ""
 
 		try:
@@ -67,7 +70,13 @@ class OpenRouterGenner(Genner):
 				main_entered = False
 
 				token_counts = 0
-				for token, token_type in stream_:
+				for result in stream_:
+					if err := result.err():
+						return Err(f"OpenRouterGenner.{self.config.model}.ch_completion: Stream error: {err}")
+					
+					token_tuple = result.unwrap()
+					token, token_type = token_tuple
+					
 					if not reasoning_entered and token_type == "reasoning":
 						reasoning_entered = True
 						self.stream_fn("<think>\n")
@@ -75,6 +84,10 @@ class OpenRouterGenner(Genner):
 						main_entered = True
 						self.stream_fn("</think>\n")
 					if token_type == "main":
+						# Ensure token is a string before concatenation
+						if not isinstance(token, str):
+							logger.warning(f"Token is not a string: {type(token)}")
+							token = str(token)
 						final_response += token
 
 					self.stream_fn(token)
@@ -90,7 +103,22 @@ class OpenRouterGenner(Genner):
 					max_tokens=self.config.max_tokens,
 					temperature=self.config.temperature,
 				)
-			assert isinstance(final_response, str)
+
+			# Ensure final_response is a string and JSON serializable
+			if not isinstance(final_response, str):
+				logger.warning(f"Final response is not a string: {type(final_response)}")
+				final_response = str(final_response)
+
+			# Verify JSON serializability
+			try:
+				json.dumps({"response": final_response})
+			except (TypeError, ValueError) as e:
+				logger.error(f"Final response is not JSON serializable: {e}")
+				return Err(f"OpenRouterGenner.{self.config.model}.ch_completion: Response is not JSON serializable")
+
+			logger.info(f"Final response type: {type(final_response)}")
+			logger.debug(f"Final response content: {final_response[:100]}...")  # Log first 100 chars
+
 		except AssertionError as e:
 			return Err(
 				f"OpenRouterGenner.{self.config.model}.ch_completion error: \n{e}"

@@ -132,9 +132,9 @@ def services_to_envs(platforms: List[str]) -> Dict[str, str]:
 			)
 
 		# Create dictionary of environment variables and their values
-		final_dict.update(
-			{env_var: os.getenv(env_var, "") for env_var in env_var_mapping[platform]}
-		)
+		platform_envs = {env_var: os.getenv(env_var, "") for env_var in env_var_mapping[platform]}
+		print(f"DEBUG: Environment variables for {platform}: {platform_envs}")  # Diagnostic print
+		final_dict.update(platform_envs)
 
 	return final_dict
 

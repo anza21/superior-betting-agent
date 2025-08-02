@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from src.datatypes import StrategyData, StrategyInsertData
 from src.db.interface import DBInterface
-from src.types import ChatHistory
+from src.custom_types import ChatHistory
 import uuid
 
 
@@ -31,10 +31,10 @@ class SQLiteDB(DBInterface):
 	def _init_db(self):
 		"""Initialize database tables and seed data from SQL files."""
 		# Create tables
-		with open("src/db/00001_init.sql", "r") as f:
+		with open("/app/src/db/00001_init.sql", "r") as f:
 			init_script = f.read()
 		# Seed data
-		with open("src/db/00002_seed.sql", "r") as f:
+		with open("/app/src/db/00002_seed.sql", "r") as f:
 			seed_script = f.read()
 
 		with sqlite3.connect(self.db_path) as conn:

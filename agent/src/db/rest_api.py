@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from src.datatypes import StrategyData, StrategyInsertData
 from src.db.interface import DBInterface
-from src.types import ChatHistory
+from src.custom_types import ChatHistory
 from src.helper import get_latest_notifications_by_source
 import random
 

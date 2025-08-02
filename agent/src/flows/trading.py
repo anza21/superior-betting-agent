@@ -14,7 +14,7 @@ from src.datatypes import (
 	WalletStats,
 )
 from src.helper import nanoid
-from src.types import ChatHistory
+from src.custom_types import ChatHistory
 
 
 def assisted_flow(

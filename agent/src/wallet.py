@@ -13,7 +13,7 @@ from src.db import SQLiteDB
 
 load_dotenv()
 
-DB = SQLiteDB(db_path=os.getenv("SQLITE_PATH", "../db/superior-agents.db"))
+DB = SQLiteDB(db_path=os.getenv("SQLITE_PATH", "agent/src/db/superior-agents.db"))
 
 
 def save_to_db(token_addr, symbol, price, metadata=""):

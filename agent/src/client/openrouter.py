@@ -2,6 +2,7 @@ import httpx
 import json
 from typing import Optional, Dict, Generator, List, Any, Tuple
 from dataclasses import dataclass
+from result import Ok, Result
 
 
 @dataclass
@@ -205,7 +206,7 @@ class OpenRouter:
 		model: Optional[str] = None,
 		include_reasoning: Optional[bool] = None,
 		max_tokens: Optional[int] = None,
-	) -> Generator[Tuple[str, str], None, None]:
+	) -> Generator[Result[Tuple[str, str], str], None, None]:
 		"""
 		Create a streaming chat completion with support for reasoning models.
 
@@ -217,7 +218,7 @@ class OpenRouter:
 		    **kwargs: Additional parameters to pass to the API
 
 		Returns:
-		    Generator yielding tuples of (content, type) where type is "reasoning" or "main"
+		    Generator yielding Result objects containing tuples of (content, type) where type is "reasoning" or "main"
 		"""
 		payload = self._prepare_payload(
 			messages=messages,
@@ -234,7 +235,7 @@ class OpenRouter:
 
 	def _stream_response(
 		self, endpoint: str, payload: Dict
-	) -> Generator[Tuple[str, str], None, None]:
+	) -> Generator[Result[Tuple[str, str], str], None, None]:
 		"""
 		Stream the response from the API, handling both content and reasoning tokens.
 
@@ -248,8 +249,8 @@ class OpenRouter:
 		    payload (Dict): Request payload
 
 		Returns:
-		    Generator[Tuple[str, str], None, None]: Generator yielding tuples of
-		        (content, type) where type is "reasoning" or "main"
+		    Generator[Result[Tuple[str, str], str], None, None]: Generator yielding Result objects containing
+		        tuples of (content, type) where type is "reasoning" or "main"
 
 		Raises:
 		    OpenRouterError: If an HTTP error or other exception occurs during streaming
@@ -299,14 +300,14 @@ class OpenRouter:
 										# Track phase but don't emit tag
 										in_reasoning_phase = True
 										# Just yield the reasoning content
-										yield (reasoning, "reasoning")
+										yield Ok((reasoning, "reasoning"))
 									elif content is not None:
 										# Track phase change but don't emit closing tag
 										if in_reasoning_phase:
 											in_reasoning_phase = False
 
 										# Yield main content without checking for </think>
-										yield (content, "main")
+										yield Ok((content, "main"))
 							except json.JSONDecodeError:
 								pass
 		except httpx.HTTPError as e:

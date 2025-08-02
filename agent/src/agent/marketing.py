@@ -10,7 +10,8 @@ from src.container import ContainerManager
 from src.db import APIDB
 from src.genner.Base import Genner
 from src.sensor.marketing import MarketingSensor
-from src.types import ChatHistory, Message
+from src.custom_types import ChatHistory, Message
+import json
 
 
 class MarketingPromptGenerator:
@@ -123,8 +124,11 @@ class MarketingPromptGenerator:
 		        str: Formatted prompt for first-time research code generation
 		"""
 		apis_str = ",\n".join(apis) if apis else self._get_default_apis_str()
+		# Ensure apis_str is not empty
+		if not apis_str:
+			apis_str = "No APIs available"
 
-		return self.prompts["research_code_prompt_first"].format(apis_str=apis_str)
+		return self.prompts.get("research_code_prompt_first", "").format(apis_str=apis_str)
 
 	def generate_research_code_prompt(
 		self,
@@ -180,11 +184,15 @@ class MarketingPromptGenerator:
 		Returns:
 		        str: Formatted prompt for strategy formulation
 		"""
-		return self.prompts["strategy_prompt"].format(
+		# Ensure latest_response is not empty
+		latest_response = new_ch.get_latest_response() or "No response available"
+
+		return self.prompts.get("strategy_prompt", "").format(
 			notifications_str=notifications_str,
 			research_output_str=research_output_str,
 			metric_name=metric_name,
 			time=time,
+			latest_response=latest_response
 		)
 
 	def generate_marketing_code_prompt(
@@ -577,9 +585,10 @@ class MarketingAgent:
 			return Err(f"MarketingAgent.gen_strategy, err: \n{err}")
 
 		response = gen_result.unwrap()
-		ctx_ch = ctx_ch.append(Message(role="assistant", content=response))
+		response_content = json.dumps(response)  # Ensure the response is a JSON serializable string
+		ctx_ch = ctx_ch.append(Message(role="assistant", content=response_content))
 
-		return Ok((response, ctx_ch))
+		return Ok((response_content, ctx_ch))
 
 	def gen_marketing_code(
 		self,

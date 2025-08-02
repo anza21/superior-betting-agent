@@ -138,7 +138,7 @@ def start_trading_agent(
 	if fe_data["model"] == "deepseek":
 		fe_data["model"] = "deepseek_or"
 
-	prompt_generator = TradingPromptGenerator(prompts=fe_data["prompts"])
+	prompt_generator = TradingPromptGenerator(prompts=fe_data["prompts"], genner=genner)
 
 	container_manager = ContainerManager(
 		docker.from_env(),
@@ -469,7 +469,9 @@ def starter_prompt():
 			choices=["No, I'm using Mock RAG for now", "Yes, i have setup the RAG"],
 		),
 	]
+	print("DEBUG: Questions being asked:", questions)
 	answers = inquirer.prompt(questions)
+	print("DEBUG: Answers received:", answers)
 
 	rag_client = extra_rag_questions(answers["rag"], answers["agent_type"])
 	model_name = extra_model_questions(answers["model"])

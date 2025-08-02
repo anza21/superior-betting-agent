@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Generic, TypeVar
 
 from src.datatypes import StrategyData, StrategyInsertData
-from src.types import ChatHistory
+from src.custom_types import ChatHistory
 
 T = TypeVar("T")
 

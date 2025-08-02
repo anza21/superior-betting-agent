@@ -2,7 +2,7 @@ from functools import partial
 from typing import Callable, List, Optional
 
 from src.genner.Base import Genner
-from src.types import ChatHistory, Message
+from src.custom_types import ChatHistory, Message
 
 
 def summarize(

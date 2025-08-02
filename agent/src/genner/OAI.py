@@ -8,9 +8,10 @@ from result import Err, Ok, Result
 
 from src.config import OAIConfig
 from src.helper import extract_content
-from src.types import ChatHistory
+from src.custom_types import ChatHistory
 
 from .Base import Genner
+import json
 
 
 class OAIGenner(Genner):
@@ -147,7 +148,7 @@ class OAIGenner(Genner):
 				f"OAIGenner.{self.config.model}.ch_completion: An unexpected error while generating occured: \n{e}"
 			)
 
-		return Ok(final_response.strip())
+		return json.dumps(final_response.strip())
 
 	def generate_code(
 		self, messages: ChatHistory, blocks: List[str] = [""]

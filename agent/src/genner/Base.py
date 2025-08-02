@@ -6,7 +6,7 @@ from result import Err, Ok, Result
 from src.config import (
 	OllamaConfig,
 )
-from src.types import ChatHistory
+from src.custom_types import ChatHistory
 
 
 class Genner(ABC):
@@ -316,3 +316,21 @@ class OllamaGenner(Genner):
 			return Err(
 				f"An unexpected error while generating list with {self.config.name}, raw response: {raw_response} occured: \n{e}"
 			)
+
+	def extract_code(self, response: str, blocks: List[str] = []) -> Result[List[str], str]:
+		# Example implementation for extracting code
+		try:
+			# Assuming the response contains code blocks separated by some delimiter
+			code_blocks = response.split('---')  # Replace '---' with actual delimiter
+			return Ok(code_blocks)
+		except Exception as e:
+			return Err(f"Failed to extract code: {str(e)}")
+
+	def extract_list(self, response: str, block_name: List[str] = []) -> Result[List[List[str]], str]:
+		# Example implementation for extracting lists
+		try:
+			# Assuming the response contains lists separated by some delimiter
+			list_blocks = [block.split(',') for block in response.split('---')]  # Replace '---' with actual delimiter
+			return Ok(list_blocks)
+		except Exception as e:
+			return Err(f"Failed to extract list: {str(e)}")
