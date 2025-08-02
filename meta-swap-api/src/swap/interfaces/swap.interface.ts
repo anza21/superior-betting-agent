@@ -5,6 +5,7 @@ export enum ChainId {
 	// Mainnets
 	ETHEREUM = "evm-1",
 	SOL = "sol",
+	ARBITRUM = "evm-42161",
 }
 
 export interface ChainInfo {

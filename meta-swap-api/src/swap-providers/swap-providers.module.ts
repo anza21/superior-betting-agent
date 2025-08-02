@@ -4,6 +4,7 @@ import { KyberSwapProvider } from "./kyber.provider";
 import { OkxSwapProvider } from "./okx.provider";
 import { OpenOceanProvider } from "./openfinance.provider";
 import { UniswapV3Provider } from "./uniswap.provider";
+import { OvertimeProvider } from "./overtime.provider";
 
 @Module({
 	providers: [
@@ -12,6 +13,7 @@ import { UniswapV3Provider } from "./uniswap.provider";
 		OneInchV6Provider,
 		OpenOceanProvider,
 		UniswapV3Provider,
+		OvertimeProvider,
 	],
 	exports: [
 		OkxSwapProvider,
@@ -19,6 +21,7 @@ import { UniswapV3Provider } from "./uniswap.provider";
 		OneInchV6Provider,
 		OpenOceanProvider,
 		UniswapV3Provider,
+		OvertimeProvider,
 	],
 })
 export class SwapProvidersModule {}

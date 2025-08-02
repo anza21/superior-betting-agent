@@ -5,6 +5,7 @@ import { GlobalModule } from "./global/global.module";
 import { LoggerModuleInstance } from "./logger.instance";
 import { SwapModule } from "./swap/swap.module";
 import { TransferModule } from "./transfer/transfer.module";
+import { OvertimeModule } from "./overtime/overtime.module";
 
 @Module({
 	imports: [
@@ -16,6 +17,7 @@ import { TransferModule } from "./transfer/transfer.module";
 		AddressesModule,
 		GlobalModule,
 		TransferModule,
+		OvertimeModule,
 	],
 })
 export class AppModule {}

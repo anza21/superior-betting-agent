@@ -18,6 +18,7 @@ import { AVAILABLE_PROVIDERS } from "./constants";
 const OkxChainIdMap: Record<ChainId, string> = {
 	[ChainId.SOL]: "501",
 	[ChainId.ETHEREUM]: "1",
+	[ChainId.ARBITRUM]: "42161",
 };
 
 @Injectable()
